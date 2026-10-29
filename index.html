@@ -131,6 +131,18 @@ button { font: inherit; color: inherit; }
 .answer { margin: 0; font-size: 1.02rem; line-height: 1.7; }
 .tip { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: .9rem; }
 .tip b { color: var(--c); }
+.prof { margin: 14px 0 6px; padding: 14px 16px; border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); display: grid; gap: 10px; }
+.prof label { line-height: 1.5; }
+.prof-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.prof-row input { flex: 1 1 180px; min-width: 0; font: inherit; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); }
+.prof-hi { font-size: 1.05rem; }
+.prof-links { display: flex; gap: 14px; flex-wrap: wrap; }
+.btn.resume { display: grid; justify-items: start; gap: 2px; text-align: start; width: 100%; }
+.btn.resume small { font-weight: 400; opacity: .9; font-size: .82rem; }
+.codebox { display: grid; gap: 8px; }
+.codebox p { margin: 0; font-size: .9rem; line-height: 1.5; }
+.codebox textarea { width: 100%; box-sizing: border-box; font: .78rem/1.4 ui-monospace, monospace; direction: ltr; padding: 8px; border-radius: 10px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); resize: vertical; }
+.codebox .err { color: var(--bad); }
 .ex { display: grid; gap: 10px; }
 .ex-sum { margin: 0; font-size: 1.08rem; font-weight: 700; line-height: 1.55; }
 .ex-pts { margin: 0; padding-inline-start: 1.2em; display: grid; gap: 6px; line-height: 1.6; }
@@ -303,11 +315,12 @@ mark { background: color-mix(in srgb, var(--star) 35%, transparent); color: inhe
       <div class="kicker">חוק חדלות פירעון ושיקום כלכלי, תשע"ח-2018 · חלק ג' · ס' 101–208</div>
       <h1 id="home-title">מסלול חדלות פירעון ליחיד</h1>
       <p>ארבע תחנות על ציר החיים של תיק, מהבקשה ועד ההפטר. בכל תחנה לומדים בכרטיסים ואז נבדקים בשאלות על התיק של דני.</p>
+      <div id="profile"></div>
       <div class="stats" id="stats"></div>
       <div id="xpbar"></div>
     </header>
     <ol class="howto">
-      <li><b>לימוד:</b> לכל סעיף, לשון החוק קודם ואז כרטיסים בכמה צורות.</li>
+      <li><b>לימוד:</b> לכל סעיף, הסבר בשפה פשוטה ואז כרטיסים בכמה צורות.</li>
       <li><b>בדיקה:</b> 10 שאלות על התוכן של כל הסעיפים, משתנות בכל סבב.</li>
       <li><b>ציד חולשות:</b> כל טעות נכנסת למאגר, ובוס שמתכווץ עד שתתקן הכול.</li>
       <li><b>תיק במשרד ועצים:</b> מנהלים את התיק של דני כעורך דין, ועצי החלטה לשאלות מהשטח.</li>
@@ -601,6 +614,7 @@ function norm(p) {
   ['m', 'wrong'].forEach((k) => { if (p[k] && typeof p[k] === 'object') Object.keys(p[k]).forEach((id) => { const v = +p[k][id]; if (Number.isFinite(v)) f[k][id] = v; }); });
   ['leaves', 'field'].forEach((k) => { if (p[k] && typeof p[k] === 'object') Object.keys(p[k]).forEach((id) => { if (Array.isArray(p[k][id])) f[k][id] = p[k][id].slice(0, 200); }); });
   if (Array.isArray(p.days)) f.days = p.days.filter((d) => typeof d === 'string').slice(-150);
+  if (p.last && typeof p.last === 'object' && typeof p.last.k === 'string') f.last = p.last;
   f.maxStreak = +p.maxStreak || 0; f.surviveBest = +p.surviveBest || 0; f.hunts = +p.hunts || 0; f.updatedAt = p.updatedAt || null; return f;
 }
 function merge(a, b) {
@@ -611,7 +625,7 @@ function merge(a, b) {
   ['leaves', 'field'].forEach((k) => Object.keys(B[k]).forEach((id) => { A[k][id] = [...new Set([...(A[k][id] || []), ...B[k][id]])]; }));
   A.days = [...new Set([...A.days, ...B.days])].sort().slice(-150);
   A.maxStreak = Math.max(A.maxStreak, B.maxStreak); A.surviveBest = Math.max(A.surviveBest, B.surviveBest); A.hunts = Math.max(A.hunts, B.hunts);
-  A.updatedAt = newer.updatedAt; return A;
+  A.last = newer.last || A.last || B.last; A.updatedAt = newer.updatedAt; return A;
 }
 function migrate() {
   const p = fresh();
@@ -623,12 +637,30 @@ function migrate() {
   } catch (e) { /* nothing to migrate */ }
   return norm(p);
 }
-let P = (() => { try { const t = localStorage.getItem(LS); return t ? norm(JSON.parse(t)) : migrate(); } catch (e) { return fresh(); } })();
+/* profiles: each user name keeps its own progress in this browser */
+const LSU = 'partc-user', LSL = 'partc-users';
+const ls = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } } };
+let USER = (ls.get(LSU) || '').trim();
+const keyOf = (u) => u ? LS + ':' + u : LS;
+function users() { try { const l = JSON.parse(ls.get(LSL) || '[]'); return Array.isArray(l) ? l.filter((x) => typeof x === 'string' && x) : []; } catch (e) { return []; } }
+function loadP(u) { try { const t = ls.get(keyOf(u)); if (t) return norm(JSON.parse(t)); } catch (e) { /* bad data */ } return u ? null : migrate(); }
+let P = loadP(USER) || fresh();
+function setUser(name, data) {
+  name = String(name || '').trim().slice(0, 40); if (!name) return;
+  const had = loadP(name);
+  if (data) P = had ? merge(had, data) : norm(data);
+  else if (had) P = had;
+  else if (!USER) P = P; /* first name in this browser: keep the progress made so far */
+  else P = fresh();
+  USER = name; ls.set(LSU, name);
+  const l = users(); if (!l.includes(name)) { l.push(name); ls.set(LSL, JSON.stringify(l)); }
+  ls.set(keyOf(name), JSON.stringify(P));
+}
 const remote = { db: null, uid: null, chain: Promise.resolve() };
 function save() {
   P.updatedAt = new Date().toISOString();
   const t = today(); if (!P.days.includes(t)) P.days.push(t);
-  try { localStorage.setItem(LS, JSON.stringify(P)); } catch (e) { /* storage unavailable */ }
+  ls.set(keyOf(USER), JSON.stringify(P));
   if (remote.db) { const body = JSON.parse(JSON.stringify(P)); remote.chain = remote.chain.then(() => remote.db.doc('progress3/' + remote.uid).set(body)).catch(() => {}); }
 }
 function logResult(r) { if (remote.db) remote.chain = remote.chain.then(() => remote.db.collection('results').add({ ...r, uid: remote.uid })).catch(() => {}); }
@@ -641,10 +673,47 @@ async function connect() {
     const id = await user.id(); if (!id) return;
     remote.db = db; remote.uid = String(id).replace(/[^A-Za-z0-9_.~:@+-]/g, '_');
     const snap = await db.doc('progress3/' + remote.uid).get();
-    if (snap.exists) { P = merge(P, snap.data()); try { localStorage.setItem(LS, JSON.stringify(P)); } catch (e) {} }
+    if (snap.exists) { P = merge(P, snap.data()); ls.set(keyOf(USER), JSON.stringify(P)); }
     else { const old = await db.doc('progress/' + remote.uid).get(); if (old.exists && old.data().stages) { const o = old.data(); MODES.forEach((m) => { const s = o.stages[m]; if (s) { const x = P.st[m]; P.st[m] = { best: Math.max(x.best, +s.best || 0), stars: Math.max(x.stars, +s.stars || 0), passed: x.passed || !!s.passed, attempts: Math.max(x.attempts, +s.attempts || 0) }; } }); save(); } }
     setSync(true); if (state.view === 'home') renderHome();
   } catch (e) { remote.db = null; setSync(false); }
+}
+
+/* ---------- save code: the whole progress packed into a short text / personal link */
+const b64u = (bytes) => { let s = ''; bytes.forEach((b) => { s += String.fromCharCode(b); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64u = (t) => { t = t.replace(/-/g, '+').replace(/_/g, '/'); while (t.length % 4) t += '='; return Uint8Array.from(atob(t), (c) => c.charCodeAt(0)); };
+async function pipe(bytes, stream) { return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer()); }
+async function makeCode() {
+  const json = new TextEncoder().encode(JSON.stringify({ n: USER, p: P }));
+  if (typeof CompressionStream === 'function') return 'z' + b64u(await pipe(json, new CompressionStream('deflate-raw')));
+  return 'j' + b64u(json);
+}
+async function readCode(code) {
+  code = String(code || '').trim().replace(/^.*[#&]u=/, '').replace(/\s+/g, '');
+  const raw = code[0] === 'z' ? await pipe(unb64u(code.slice(1)), new DecompressionStream('deflate-raw')) : unb64u(code.slice(1));
+  const o = JSON.parse(new TextDecoder().decode(raw));
+  if (!o || typeof o !== 'object' || !o.p) throw new Error('bad');
+  return { name: String(o.n || '').trim(), p: norm(o.p) };
+}
+const SITE = 'https://michaelbarg.github.io/insolvency-game/';
+const personalLink = (code) => (/^https?:$/.test(location.protocol) && !/claude/.test(location.hostname) ? location.href.split('#')[0] : SITE) + '#u=' + code;
+
+/* ---------- where you stopped */
+function setLast(o) { P.last = { ...o, at: new Date().toISOString() }; ls.set(keyOf(USER), JSON.stringify(P)); }
+function lastLabel(l) {
+  if (!l) return '';
+  if (l.k === 'learn') return `${l.title || `תחנה ${META[l.stage].n} · לימוד`} · כרטיס ${Math.min(l.pos + 1, l.ids.length)} מתוך ${l.ids.length}`;
+  if (l.k === 'quiz') return MAIN.includes(l.mode) ? `תחנה ${META[l.mode].n} · בדיקה` : (META[l.mode] || {}).title || 'בדיקה';
+  if (l.k === 'field') return `תיק במשרד · תחנה ${META[l.stage].n}`;
+  if (l.k === 'sec') return `ס' ${l.num} · ${DATA.notes[l.num] || ''}`;
+  return '';
+}
+function resume() {
+  const l = P.last; if (!l) return;
+  if (l.k === 'learn') { const ids = (l.ids || []).filter((id) => ALLC[id]); if (!ids.length) return; if (!l.title) $('#learn-where').textContent = `תחנה ${META[l.stage].n} · לימוד · ${META[l.stage].title}`; show('learn', colorOf(l.stage)); startLearn(l.stage, ids, l.title); state.learn.pos = Math.min(l.pos || 0, ids.length - 1); renderLearn(); return; }
+  if (l.k === 'quiz') { startQuiz(l.mode); return; }
+  if (l.k === 'field') { openField(l.stage); return; }
+  if (l.k === 'sec' && DATA.notes[l.num]) openSection(l.num);
 }
 
 /* ---------- mastery (Leitner boxes 0..4; 3+ = שולט) */
@@ -756,7 +825,58 @@ document.addEventListener('click', (e) => {
 });
 
 const passedCount = () => MAIN.filter((m) => P.st[m].passed).length;
+function renderProfile() {
+  const el = $('#profile'); if (!el) return;
+  if (!USER) {
+    el.innerHTML = `<form class="prof" id="profForm"><label for="profName"><b>מה השם שלך?<\/b> כך המערכת תזכור אותך ותחזיר אותך למקום שבו עצרת.<\/label>
+      <div class="prof-row"><input id="profName" maxlength="40" autocomplete="nickname" placeholder="למשל: מיכאל"><button class="btn solid" type="submit">שמירה<\/button><\/div>
+      <button class="linkish" type="button" id="profHave">יש לי קוד שמירה ממכשיר אחר<\/button><div id="profCode"><\/div><\/form>`;
+    $('#profForm').onsubmit = (e) => { e.preventDefault(); const v = $('#profName').value.trim(); if (!v) return; setUser(v); renderHome(); toast(`שלום ${v}, ההתקדמות שלך נשמרת`); };
+    $('#profHave').onclick = () => openImport($('#profCode'));
+    return;
+  }
+  const others = users().filter((u) => u !== USER);
+  el.innerHTML = `<div class="prof">
+    <div class="prof-hi">שלום, <b>${esc(USER)}<\/b><\/div>
+    ${P.last ? `<button class="btn solid resume" type="button" id="profResume"><span>המשך מאיפה שעצרת<\/span><small>${esc(lastLabel(P.last))}<\/small><\/button>` : ''}
+    <div class="prof-links"><button class="linkish" type="button" id="profSave">קוד שמירה וקישור אישי<\/button>
+      <button class="linkish" type="button" id="profLoad">טעינת קוד<\/button>
+      ${remote.db ? '' : `<button class="linkish" type="button" id="profSwitch">החלפת משתמש<\/button>`}<\/div>
+    <div id="profCode"><\/div><\/div>`;
+  const r = $('#profResume'); if (r) r.onclick = resume;
+  $('#profSave').onclick = async () => {
+    const box = $('#profCode'), code = await makeCode(), link = personalLink(code);
+    box.innerHTML = `<div class="codebox"><p>שמור את הקישור הזה (למשל במועדפים או בהודעה לעצמך). פתיחה שלו בכל מכשיר תחזיר אותך, ${esc(USER)}, לאותה נקודה. הקוד מתעדכן: אחרי עוד תרגול, צור קישור חדש.<\/p>
+      <textarea readonly rows="3" id="codeTxt">${esc(link)}<\/textarea>
+      <div class="actions"><button class="btn solid" type="button" id="cpLink">העתקת הקישור<\/button><button class="btn plain" type="button" id="cpCode">העתקת הקוד בלבד<\/button><\/div><\/div>`;
+    const cp = (t) => { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('הועתק'), () => { const ta = $('#codeTxt'); ta.value = t; ta.select(); toast('סמן והעתק ידנית'); }); };
+    $('#cpLink').onclick = () => cp(link); $('#cpCode').onclick = () => cp(code);
+  };
+  $('#profLoad').onclick = () => openImport($('#profCode'));
+  const sw = $('#profSwitch'); if (sw) sw.onclick = () => {
+    $('#profCode').innerHTML = `<div class="codebox"><p>מי משחק?<\/p><div class="actions">${others.map((u) => `<button class="btn plain" type="button" data-user="${esc(u)}">${esc(u)}<\/button>`).join('')}
+      <button class="btn" type="button" id="newUser">משתמש חדש<\/button><\/div><\/div>`;
+    document.querySelectorAll('[data-user]').forEach((b) => { b.onclick = () => { setUser(b.dataset.user); renderHome(); }; });
+    $('#newUser').onclick = () => { USER = ''; ls.set(LSU, ''); P = fresh(); renderHome(); };
+  };
+}
+function openImport(box) {
+  box.innerHTML = `<div class="codebox"><p>הדבק כאן את הקישור האישי או את קוד השמירה:<\/p><textarea rows="3" id="impTxt"><\/textarea>
+    <div class="actions"><button class="btn solid" type="button" id="impGo">טעינה<\/button><\/div><p class="err" id="impErr"><\/p><\/div>`;
+  $('#impGo').onclick = async () => {
+    try { const o = await readCode($('#impTxt').value); setUser(o.name || USER || 'אני', o.p); save(); renderHome(); toast(`ההתקדמות של ${USER} נטענה`); }
+    catch (e) { $('#impErr').textContent = 'הקוד לא תקין. ודא שהעתקת אותו במלואו.'; }
+  };
+}
+async function importFromHash() {
+  const m = location.hash.match(/[#&]u=([A-Za-z0-9_-]+)/); if (!m) return;
+  try { const o = await readCode(m[1]); setUser(o.name || USER || 'אני', o.p); save(); toast(`ברוך שובך, ${USER}`); }
+  catch (e) { toast('הקישור האישי לא תקין'); }
+  history.replaceState(null, '', location.href.split('#')[0]);
+  if (state.view === 'home') renderHome();
+}
 function renderHome() {
+  renderProfile();
   const xp = totalXP(), lv = levelOf(xp), next = LEVELS[lv + 1];
   const weakN = Object.keys(P.wrong).filter(isWeak).length;
   const greens = DATA.secs.filter((s) => { const x = secStats(s); return x.total && x.master === x.total; }).length;
@@ -888,7 +1008,7 @@ function openDeckChooser(stage) {
   show('learn', colorOf(stage));
 }
 function startLearn(stage, ids, title) {
-  state.learn = { stage, queue: ids.slice(), pos: 0, flipped: false, first: 0, missed: [], seen: new Set(), back: 0 };
+  state.learn = { stage, queue: ids.slice(), pos: 0, flipped: false, first: 0, missed: [], seen: new Set(), back: 0, title: title || '' };
   if (title) $('#learn-where').textContent = title;
   renderLearn();
 }
@@ -919,6 +1039,7 @@ function renderLearn() {
     return;
   }
   const c = ALLC[L.queue[L.pos]], f = cardFaces(c);
+  setLast({ k: 'learn', stage: L.stage, ids: L.queue, pos: L.pos, title: L.title || '' });
   $('#learn-body').innerHTML = `
     <div class="flip ${L.flipped ? 'on' : ''}" id="flip" tabindex="0" role="button" aria-pressed="${L.flipped}" aria-label="הפוך כרטיס">
       <div class="flip-inner">
@@ -946,7 +1067,7 @@ function renderLearn() {
 
 /* ---------- section drill */
 function openSection(num) {
-  const st = stageOfSec(num), cards = DATA.cards[st].filter((c) => c.sec === num);
+  const st = stageOfSec(num), cards = DATA.cards[st].filter((c) => c.sec === num); setLast({ k: 'sec', num });
   const qs = Object.values(ALLQ).filter((q) => q.sec === num || (q.s || []).includes(num));
   const x = secStats(num);
   $('#learn-where').textContent = `ס' ${num} · ${DATA.notes[num]}`;
@@ -987,6 +1108,7 @@ function startQuiz(mode, items, title) {
   if (!list.length) { toast('אין כרגע שאלות למצב הזה'); return; }
   const huntStart = mode === 'hunt' ? Object.keys(P.wrong).filter(isWeak).length : 0;
   state.quiz = { mode, items: list, i: 0, answers: [], streak: 0, answered: false, lives: 3, huntStart, title };
+  if (!items) setLast({ k: 'quiz', mode });
   $('#quiz-where').textContent = title || (MAIN.includes(mode) ? `תחנה ${META[mode].n} · בדיקה` : META[mode].title);
   $('#quitBox').innerHTML = '';
   show('quiz', MAIN.includes(mode) ? colorOf(mode) : `var(${META[mode].c})`); renderQuestion();
@@ -1111,7 +1233,7 @@ function finishQuiz() {
 const CS = { stage: null, i: 0, score: 0, picks: [] };
 function caseBest(m) { const l = (P.field[m] || []).filter(Number.isFinite); return l.length === 1 ? l[0] : 0; }
 function openField(m) {
-  const c = EXTRAS.cases[m]; CS.stage = m; CS.i = -1; CS.score = 0; CS.picks = [];
+  const c = EXTRAS.cases[m]; CS.stage = m; CS.i = -1; CS.score = 0; CS.picks = []; setLast({ k: 'field', stage: m });
   $('#field-where').textContent = `תיק במשרד · ${c.title}`;
   show('field', colorOf(m)); renderCase();
 }
@@ -1183,7 +1305,7 @@ function treeMap(tr, id, seen) {
 }
 
 /* ---------- boot */
-renderHome(); setSync(false); connect();
+renderHome(); setSync(false); connect(); importFromHash();
 
 </script>
 
