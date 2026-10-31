@@ -147,6 +147,10 @@ button { font: inherit; color: inherit; }
 .pl-l select { font: inherit; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); max-width: 180px; }
 .pl-now { font-size: .85rem; font-weight: 700; color: var(--c); }
 .r-sec.speaking { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 45%, transparent); }
+.saying { background: color-mix(in srgb, var(--c) 16%, transparent); border-radius: 8px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 16%, transparent); transition: background .2s; }
+.r-sec { scroll-margin-top: 130px; }
+.btn.icon { min-width: 44px; padding-inline: 10px; }
+.pl-set { margin-top: 6px; }
 .toc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .toc-l { font-size: .8rem; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink); text-decoration: none; }
 .r-ch { font-size: 1.15rem; margin: 26px 0 6px; color: var(--c); }
@@ -1476,11 +1480,11 @@ function openRead(stage, at) {
     if (x.h) return x.h === 'c' ? `<h2 class="r-ch" id="rc-${ci++}">${esc(x.t)}<\/h2>` : `<h3 class="r-sg">${esc(x.t)}<\/h3>`;
     const c = ALLC['law-' + x.s], ex = c.ex;
     return `<article class="r-sec ${P.read[x.s] ? 'is-read' : ''}" id="r-${x.s}" data-s="${x.s}">
-      <div class="r-head"><span class="r-num">ס' ${esc(x.s)}<\/span><h4>${esc(c.note)}<\/h4><\/div>
-      <p class="ex-sum">${esc(ex.sum)}<\/p>
-      ${ex.pts.length ? `<ul class="ex-pts">${ex.pts.map(([d, t]) => `<li class="${d ? 'sub' : ''}">${esc(t)}<\/li>`).join('')}<\/ul>` : ''}
-      ${ex.eg ? `<div class="eg"><b>דוגמה<\/b><p>${esc(ex.eg)}<\/p><\/div>` : ''}
-      ${ex.tip ? `<p class="tip"><b>לעו"ד החייב:<\/b> ${esc(ex.tip)}<\/p>` : ''}
+      <div class="r-head" data-k="head"><span class="r-num">ס' ${esc(x.s)}<\/span><h4>${esc(c.note)}<\/h4><\/div>
+      <p class="ex-sum" data-k="sum">${esc(ex.sum)}<\/p>
+      ${ex.pts.length ? `<ul class="ex-pts">${ex.pts.map(([d, t], i) => `<li class="${d ? 'sub' : ''}" data-k="p${i}">${esc(t)}<\/li>`).join('')}<\/ul>` : ''}
+      ${ex.eg ? `<div class="eg" data-k="eg"><b>דוגמה<\/b><p>${esc(ex.eg)}<\/p><\/div>` : ''}
+      ${ex.tip ? `<p class="tip" data-k="tip"><b>לעו"ד החייב:<\/b> ${esc(ex.tip)}<\/p>` : ''}
       <details class="lawbox"><summary>לשון החוק המלאה · עמ' ${DATA.pages[x.s]} במחברת<\/summary>${lawHTML(c.law)}<\/details>
       <div class="r-act"><button class="btn" type="button" data-say="${x.s}">הקראה<\/button><button class="btn ${P.read[x.s] ? 'good solid' : ''}" type="button" data-mark="${x.s}">${P.read[x.s] ? 'קראתי ✓' : 'סימון: קראתי'}<\/button>
         <button class="btn plain" type="button" data-sec="${x.s}">תרגול הסעיף<\/button><\/div>
@@ -1530,66 +1534,118 @@ function bindVideos(root) {
 }
 const VID_NOTE = 'סרטונים פומביים מ-YouTube שנבחרו לפי הכותרת והערוץ; התוכן שלהם לא נבדק כאן. חלקם של משרדים שמציעים שירותים, וחלקם משתמשים במונח הישן "פשיטת רגל". המקור המחייב הוא החוק.';
 
-/* ---------- read aloud (speech synthesis of the device / browser) */
-const TTS = { on: false, stage: null, list: [], cur: null, cont: true, q: [], rate: +(ls.get('tts-rate') || 1), voice: ls.get('tts-voice') || '' };
+/* ---------- read aloud (speech synthesis of the device / browser)
+   robust queue: one sentence per utterance, a generation token so stale callbacks are ignored,
+   a watchdog for browsers that never fire onend, pause = cancel + restart the same sentence. */
+const TTS = { on: false, paused: false, gen: 0, stage: null, list: [], cur: null, cont: true, sents: [], si: 0, wd: 0, rate: +(ls.get('tts-rate') || 1), voice: ls.get('tts-voice') || '' };
 const hasTTS = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function';
-function heVoices() { if (!hasTTS) return []; return speechSynthesis.getVoices().filter((v) => /^he|^iw/i.test(v.lang)); }
-function voiceScore(v) { const n = v.name; return (/natural|neural|online/i.test(n) ? 4 : 0) + (/premium|enhanced|siri/i.test(n) ? 3 : 0) + (/google/i.test(n) ? 1 : 0); }
-function pickVoice() { const vs = heVoices(); return vs.find((v) => v.name === TTS.voice) || vs.sort((a, b) => voiceScore(b) - voiceScore(a))[0] || null; }
+function heVoices() { if (!hasTTS) return []; return speechSynthesis.getVoices().filter((v) => /^(he|iw)/i.test(v.lang)); }
+function voiceScore(v) { if (!v) return -1; const n = v.name; return (/natural|neural|online/i.test(n) ? 4 : 0) + (/premium|enhanced|siri/i.test(n) ? 3 : 0) + (/google/i.test(n) ? 1 : 0); }
+function pickVoice() { const vs = heVoices(); return vs.find((v) => v.name === TTS.voice) || vs.slice().sort((a, b) => voiceScore(b) - voiceScore(a))[0] || null; }
 function speakable(t) {
   return String(t)
-    .replace(/ס'\s?(\d+)/g, 'סעיף $1').replace(/ס"ק/g, 'סעיף קטן').replace(/עו"ד/g, 'עורך דין').replace(/יועמ"ש/g, 'יועץ המשפטי לממשלה')
-    .replace(/הוצל"פ/g, 'הוצאה לפועל').replace(/עמ'/g, 'עמוד').replace(/([\d,.]+)\s?₪/g, '$1 שקלים').replace(/₪/g, 'שקלים')
-    .replace(/\(([א-ת\d]{1,2})\)/g, ' $1 ').replace(/[→]/g, ', ולכן ').replace(/[–—]/g, ', ').replace(/\//g, ' או ').replace(/\s+/g, ' ').replace(/\s+([,.])/g, '$1').trim();
+    .replace(/(\d{1,3}(?:,\d{3})*)\.(\d{2})\s?(?:שקלים חדשים|₪)/g, (m, a, b) => `${a} שקלים${+b ? ` ו-${+b} אגורות` : ''}`)
+    .replace(/שקלים חדשים/g, 'שקלים').replace(/([\d,]+)\s?₪/g, '$1 שקלים').replace(/₪/g, 'שקלים')
+    .replace(/ס'\s?(\d+)/g, 'סעיף $1').replace(/ס"ק/g, 'סעיף קטן').replace(/עו"ד/g, 'עורך דין').replace(/ה?יועמ"ש/g, 'היועץ המשפטי לממשלה')
+    .replace(/הוצל"פ/g, 'הוצאה לפועל').replace(/עמ'/g, 'עמוד').replace(/חו"ל/g, 'חוץ לארץ').replace(/בע"מ/g, 'בערבון מוגבל')
+    .replace(/(\d)\(([א-ת])\)/g, '$1 $2').replace(/\(([א-ת\d]{1,2})\)/g, ' $1 ')
+    .replace(/\s*→\s*/g, ', ').replace(/\s[–—]\s/g, ', ').replace(/[–—]/g, ' עד ').replace(/\//g, ' או ').replace(/×/g, ' פי ')
+    .replace(/\s+/g, ' ').replace(/\s+([,.:;])/g, '$1').trim();
 }
 function secScript(num) {
-  const c = ALLC['law-' + num], ex = c.ex, parts = [`סעיף ${num}. ${c.note}.`, ex.sum];
-  ex.pts.forEach(([, t]) => parts.push(t));
-  if (ex.eg) parts.push('דוגמה. ' + ex.eg);
-  if (ex.tip) parts.push('ומה זה אומר לעורך הדין של החייב: ' + ex.tip);
-  /* split into short sentences – long utterances get cut off in some browsers */
-  return parts.map(speakable).flatMap((p) => p.split(/(?<=[.!?;:])\s+/)).flatMap((p) => p.length > 220 ? p.split(/,\s+/) : [p]).filter((x) => x.trim());
+  const c = ALLC['law-' + num], ex = c.ex;
+  const segs = [['head', `סעיף ${num}. ${c.note}.`], ['sum', ex.sum], ...ex.pts.map(([, t], i) => ['p' + i, t])];
+  if (ex.eg) segs.push(['eg', 'דוגמה. ' + ex.eg]);
+  if (ex.tip) segs.push(['tip', 'ומה זה אומר לעורך הדין של החייב: ' + ex.tip]);
+  const out = [];
+  segs.forEach(([k, t]) => speakable(t).split(/(?<=[.!?])\s+/).flatMap((p) => (p.length > 200 ? p.split(/(?<=,)\s+/) : [p])).forEach((x) => { if (x.trim()) out.push({ k, t: x.trim() }); }));
+  return out;
 }
-function ttsStop() { if (!hasTTS) return; TTS.on = false; TTS.q = []; speechSynthesis.cancel(); document.querySelectorAll('.r-sec.speaking').forEach((e) => e.classList.remove('speaking')); renderPlayer(); }
-function ttsPlay(num, cont = true) {
-  if (!hasTTS) return;
-  speechSynthesis.cancel(); TTS.on = true; TTS.cont = cont; TTS.cur = num; TTS.q = secScript(num);
-  document.querySelectorAll('.r-sec.speaking').forEach((e) => e.classList.remove('speaking'));
-  const el = document.getElementById('r-' + num); if (el) { el.classList.add('speaking'); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-  setLast({ k: 'read', stage: TTS.stage, num }); renderPlayer(); ttsNext();
-}
-function ttsNext() {
+function markSaying() {
+  document.querySelectorAll('.saying').forEach((e) => e.classList.remove('saying'));
+  document.querySelectorAll('.r-sec.speaking').forEach((e) => { if (e.id !== 'r-' + TTS.cur) e.classList.remove('speaking'); });
   if (!TTS.on) return;
-  if (!TTS.q.length) {
+  const sec = document.getElementById('r-' + TTS.cur); if (!sec) return;
+  sec.classList.add('speaking');
+  const k = (TTS.sents[TTS.si] || {}).k, el = k && sec.querySelector(`[data-k="${k}"]`); if (!el) return;
+  el.classList.add('saying');
+  const r = el.getBoundingClientRect(), pl = $('#player'), top = pl ? pl.getBoundingClientRect().bottom : 0;
+  if (r.top < top + 8 || r.bottom > innerHeight - 8) window.scrollBy({ top: r.top - top - Math.max(40, (innerHeight - top - r.height) / 3), behavior: 'smooth' });
+}
+function ttsStop() {
+  if (!hasTTS) return; TTS.gen++; clearTimeout(TTS.wd); TTS.on = false; TTS.paused = false; speechSynthesis.cancel();
+  document.querySelectorAll('.r-sec.speaking,.saying').forEach((e) => e.classList.remove('speaking', 'saying')); renderPlayer();
+}
+function ttsPlay(num, cont = true, si = 0) {
+  if (!hasTTS) return;
+  TTS.gen++; clearTimeout(TTS.wd); speechSynthesis.cancel();
+  Object.assign(TTS, { on: true, paused: false, cont, cur: num, sents: secScript(num), si });
+  setLast({ k: 'read', stage: TTS.stage, num }); renderPlayer();
+  speakCur(); /* synchronous – iOS only allows speech that starts inside the tap */
+}
+function speakCur() {
+  if (!TTS.on || TTS.paused) return;
+  const gen = ++TTS.gen; clearTimeout(TTS.wd);
+  if (TTS.si >= TTS.sents.length) {
     const i = TTS.list.indexOf(TTS.cur);
     if (TTS.cont && i >= 0 && i < TTS.list.length - 1) { ttsPlay(TTS.list[i + 1], true); return; }
     ttsStop(); return;
   }
-  const u = new SpeechSynthesisUtterance(TTS.q.shift()), v = pickVoice();
+  markSaying(); updNow();
+  const text = TTS.sents[TTS.si].t, u = new SpeechSynthesisUtterance(text), v = pickVoice();
   u.lang = 'he-IL'; if (v) u.voice = v; u.rate = TTS.rate;
-  u.onend = () => setTimeout(ttsNext, 120); u.onerror = (e) => { if (e.error !== 'interrupted' && e.error !== 'canceled') setTimeout(ttsNext, 120); };
+  let started = false;
+  const advance = () => { if (gen !== TTS.gen || !TTS.on || TTS.paused) return; TTS.si++; setTimeout(speakCur, 140); };
+  u.onstart = () => { started = true; };
+  u.onend = advance;
+  u.onerror = (e) => { if (gen !== TTS.gen) return; if (e.error === 'interrupted' || e.error === 'canceled') return; advance(); };
   speechSynthesis.speak(u);
+  if (speechSynthesis.paused) speechSynthesis.resume();
+  /* watchdog: some browsers never fire onend (or drop the utterance after cancel) */
+  const est = 2500 + (text.length * 95) / TTS.rate;
+  TTS.wd = setTimeout(() => {
+    if (gen !== TTS.gen || !TTS.on || TTS.paused) return;
+    if (!started && !speechSynthesis.speaking) { TTS.gen++; speakCur(); return; } /* never started – retry once more */
+    if (speechSynthesis.speaking) { TTS.wd = setTimeout(() => { if (gen === TTS.gen && TTS.on && !TTS.paused) { TTS.gen++; speechSynthesis.cancel(); TTS.si++; setTimeout(speakCur, 140); } }, est); return; }
+    advance();
+  }, est);
 }
+function ttsPause() { if (!TTS.on) return; TTS.paused = true; TTS.gen++; clearTimeout(TTS.wd); speechSynthesis.cancel(); renderPlayer(); markSaying(); }
+function ttsResume() { if (!TTS.on) return; TTS.paused = false; renderPlayer(); speakCur(); }
+function ttsSeek(d) { if (!TTS.on) return; TTS.si = Math.max(0, Math.min(TTS.sents.length - 1, TTS.si + d)); TTS.paused = false; speechSynthesis.cancel(); renderPlayer(); speakCur(); }
+function updNow() { const n = $('#plNow'); if (n) n.textContent = `ס' ${TTS.cur} · משפט ${Math.min(TTS.si + 1, TTS.sents.length)}/${TTS.sents.length}`; }
 function renderPlayer() {
   const el = $('#player'); if (!el) return;
   if (!hasTTS) { el.innerHTML = `<p class="hint">הדפדפן הזה לא תומך בהקראה.<\/p>`; return; }
   const vs = heVoices(), v = pickVoice();
   const first = TTS.cur && TTS.list.includes(TTS.cur) ? TTS.cur : (P.last && P.last.k === 'read' && TTS.list.includes(P.last.num) ? P.last.num : TTS.list[0]);
   el.innerHTML = `<div class="pl-row">
-      ${TTS.on ? `<button class="btn solid" type="button" id="plStop">עצירה<\/button><button class="btn" type="button" id="plSkip">לסעיף הבא<\/button><span class="pl-now">מקריא: ס' ${esc(TTS.cur)}<\/span>`
-        : `<button class="btn solid" type="button" id="plPlay">הקראה רציפה מס' ${esc(first)}<\/button>`}
-      <label class="pl-l">מהירות<select id="plRate">${[0.85, 1, 1.15, 1.3, 1.5].map((r) => `<option value="${r}" ${r === TTS.rate ? 'selected' : ''}>${r}×<\/option>`).join('')}<\/select><\/label>
+      ${TTS.on ? `${TTS.paused ? `<button class="btn solid" type="button" id="plRes">▶ המשך<\/button>` : `<button class="btn solid" type="button" id="plPause">❚❚ השהיה<\/button>`}
+        <button class="btn icon" type="button" id="plPrev" aria-label="משפט קודם" title="משפט קודם">››<\/button>
+        <button class="btn icon" type="button" id="plNext" aria-label="משפט הבא" title="משפט הבא">‹‹<\/button>
+        <button class="btn" type="button" id="plSkip">לסעיף הבא<\/button>
+        <button class="btn plain" type="button" id="plStop">עצירה<\/button>
+        <span class="pl-now" id="plNow"><\/span>`
+      : `<button class="btn solid" type="button" id="plPlay">▶ הקראה רציפה מס' ${esc(first)}<\/button>`}
+    <\/div>
+    <div class="pl-row pl-set">
+      <label class="pl-l">מהירות<select id="plRate">${[0.8, 0.9, 1, 1.1, 1.25, 1.4].map((r) => `<option value="${r}" ${r === TTS.rate ? 'selected' : ''}>${r}×<\/option>`).join('')}<\/select><\/label>
       ${vs.length > 1 ? `<label class="pl-l">קול<select id="plVoice">${vs.map((x) => `<option ${v && x.name === v.name ? 'selected' : ''}>${esc(x.name)}<\/option>`).join('')}<\/select><\/label>` : ''}
     <\/div>
-    ${!vs.length ? `<p class="hint">לא נמצא במכשיר קול בעברית. לקול הכי טבעי: לפתוח את האתר בדפדפן Microsoft Edge (קול "Hila" או "Avri" – Natural), או להוריד קול עברי משופר בהגדרות הנגישות של האייפון או המק.<\/p>`
-      : voiceScore(v) < 3 ? `<p class="hint">לקול אנושי יותר: בדפדפן Microsoft Edge יש קולות עבריים טבעיים ("Hila"/"Avri" – Natural). באייפון ובמק אפשר להוריד קול עברי משופר (Enhanced) בהגדרות > נגישות > תוכן מוקרא.<\/p>` : ''}`;
-  const pp = $('#plPlay'); if (pp) pp.onclick = () => ttsPlay(first, true);
-  const st = $('#plStop'); if (st) st.onclick = ttsStop;
-  const sk = $('#plSkip'); if (sk) sk.onclick = () => { const i = TTS.list.indexOf(TTS.cur); if (i < TTS.list.length - 1) ttsPlay(TTS.list[i + 1], true); else ttsStop(); };
-  $('#plRate').onchange = (e) => { TTS.rate = +e.target.value; ls.set('tts-rate', String(TTS.rate)); };
-  const vo = $('#plVoice'); if (vo) vo.onchange = (e) => { TTS.voice = e.target.value; ls.set('tts-voice', TTS.voice); };
+    ${!vs.length ? `<p class="hint">לא נמצא במכשיר קול בעברית, ולכן ההקראה עלולה לא לעבוד. לקול הכי טבעי: Microsoft Edge (הקולות "Hila"/"Avri" – Natural), או להוריד קול עברי משופר בהגדרות הנגישות של האייפון או המק.<\/p>`
+      : voiceScore(v) < 3 ? `<p class="hint">לקול אנושי יותר: בדפדפן Microsoft Edge יש קולות עבריים טבעיים ("Hila"/"Avri" – Natural). באייפון ובמק אפשר להוריד קול עברי משופר (Enhanced) בהגדרות › נגישות › תוכן מוקרא.<\/p>` : ''}`;
+  const on = (id, f) => { const b = $('#' + id); if (b) b.onclick = f; };
+  on('plPlay', () => ttsPlay(first, true)); on('plPause', ttsPause); on('plRes', ttsResume); on('plStop', ttsStop);
+  on('plPrev', () => ttsSeek(-1)); on('plNext', () => ttsSeek(1));
+  on('plSkip', () => { const i = TTS.list.indexOf(TTS.cur); if (i < TTS.list.length - 1) ttsPlay(TTS.list[i + 1], true); else ttsStop(); });
+  $('#plRate').onchange = (e) => { TTS.rate = +e.target.value; ls.set('tts-rate', String(TTS.rate)); if (TTS.on && !TTS.paused) { speechSynthesis.cancel(); speakCur(); } };
+  const vo = $('#plVoice'); if (vo) vo.onchange = (e) => { TTS.voice = e.target.value; ls.set('tts-voice', TTS.voice); if (TTS.on && !TTS.paused) { speechSynthesis.cancel(); speakCur(); } };
+  if (TTS.on) updNow();
 }
-if (hasTTS) speechSynthesis.onvoiceschanged = () => { if (state.view === 'read') renderPlayer(); };
+if (hasTTS) {
+  speechSynthesis.onvoiceschanged = () => { if (state.view === 'read' && !TTS.on) renderPlayer(); };
+  window.addEventListener('pagehide', () => speechSynthesis.cancel());
+}
 
 /* ---------- tools: deadlines + where to file */
 const UNIT = { d: ['יום', 'ימים'], m: ['חודש', 'חודשים'], y: ['שנה', 'שנים'] };
