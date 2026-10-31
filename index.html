@@ -131,6 +131,12 @@ button { font: inherit; color: inherit; }
 .answer { margin: 0; font-size: 1.02rem; line-height: 1.7; }
 .tip { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: .9rem; }
 .tip b { color: var(--c); }
+.player { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0; border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
+.pl-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pl-l { display: flex; gap: 6px; align-items: center; font-size: .82rem; color: var(--muted); }
+.pl-l select { font: inherit; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); max-width: 180px; }
+.pl-now { font-size: .85rem; font-weight: 700; color: var(--c); }
+.r-sec.speaking { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 45%, transparent); }
 .toc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .toc-l { font-size: .8rem; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink); text-decoration: none; }
 .r-ch { font-size: 1.15rem; margin: 26px 0 6px; color: var(--c); }
@@ -917,6 +923,7 @@ function checkGains() {
 const state = { view: 'home', learn: null, quiz: null };
 const VIEWS = ['home', 'learn', 'quiz', 'result', 'field', 'tree', 'read', 'tool'];
 function show(view, color) {
+  if (view !== 'read') ttsStop();
   state.view = view; VIEWS.forEach((v) => { const el = $('#v-' + v); if (el) el.hidden = v !== view; });
   if (color) document.querySelectorAll('.session').forEach((s) => s.style.setProperty('--c', color));
   window.scrollTo({ top: 0, behavior: 'auto' });
@@ -1438,12 +1445,12 @@ function openRead(stage, at) {
       ${ex.eg ? `<div class="eg"><b>דוגמה<\/b><p>${esc(ex.eg)}<\/p><\/div>` : ''}
       ${ex.tip ? `<p class="tip"><b>לעו"ד החייב:<\/b> ${esc(ex.tip)}<\/p>` : ''}
       <details class="lawbox"><summary>לשון החוק המלאה · עמ' ${DATA.pages[x.s]} במחברת<\/summary>${lawHTML(c.law)}<\/details>
-      <div class="r-act"><button class="btn ${P.read[x.s] ? 'good solid' : ''}" type="button" data-mark="${x.s}">${P.read[x.s] ? 'קראתי ✓' : 'סימון: קראתי'}<\/button>
+      <div class="r-act"><button class="btn" type="button" data-say="${x.s}">הקראה<\/button><button class="btn ${P.read[x.s] ? 'good solid' : ''}" type="button" data-mark="${x.s}">${P.read[x.s] ? 'קראתי ✓' : 'סימון: קראתי'}<\/button>
         <button class="btn plain" type="button" data-sec="${x.s}">תרגול הסעיף<\/button><\/div>
     <\/article>`;
   }).join('');
   const nx = MAIN[MAIN.indexOf(stage) + 1];
-  $('#read-body').innerHTML = `<div class="r-top"><div class="meter"><span id="readMeter" style="width:${Math.round(100 * done() / secsIn.length)}%"><\/span><\/div>
+  $('#read-body').innerHTML = `<div class="player" id="player"><\/div><div class="r-top"><div class="meter"><span id="readMeter" style="width:${Math.round(100 * done() / secsIn.length)}%"><\/span><\/div>
       <p class="block-sub" id="readCount">קראת ${done()} מתוך ${secsIn.length} סעיפים בתחנה. כל סעיף: בקצרה, הנקודות החשובות, דוגמה ומה זה אומר לעו"ד החייב.<\/p>
       <nav class="toc">${toc}<\/nav><\/div>
     <div class="r-body">${body}<\/div>
@@ -1457,6 +1464,8 @@ function openRead(stage, at) {
     $('#readCount').firstChild.textContent = `קראת ${done()} מתוך ${secsIn.length} סעיפים בתחנה. כל סעיף: בקצרה, הנקודות החשובות, דוגמה ומה זה אומר לעו"ד החייב.`;
   }; });
   document.querySelectorAll('.toc-l').forEach((a) => { a.onclick = (e) => { e.preventDefault(); const el = document.getElementById(a.getAttribute('href').slice(1)); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
+  TTS.stage = stage; TTS.list = secsIn; renderPlayer();
+  document.querySelectorAll('[data-say]').forEach((b) => { b.onclick = () => ttsPlay(b.dataset.say, false); });
   show('read', colorOf(stage));
   setLast({ k: 'read', stage, num: at && DATA.notes[at] ? at : secsIn[0] });
   if (at && document.getElementById('r-' + at)) setTimeout(() => document.getElementById('r-' + at).scrollIntoView({ block: 'start' }), 30);
@@ -1470,6 +1479,67 @@ function openRead(stage, at) {
     document.querySelectorAll('.r-sec').forEach((el) => readObs.observe(el));
   }
 }
+
+/* ---------- read aloud (speech synthesis of the device / browser) */
+const TTS = { on: false, stage: null, list: [], cur: null, cont: true, q: [], rate: +(ls.get('tts-rate') || 1), voice: ls.get('tts-voice') || '' };
+const hasTTS = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function';
+function heVoices() { if (!hasTTS) return []; return speechSynthesis.getVoices().filter((v) => /^he|^iw/i.test(v.lang)); }
+function voiceScore(v) { const n = v.name; return (/natural|neural|online/i.test(n) ? 4 : 0) + (/premium|enhanced|siri/i.test(n) ? 3 : 0) + (/google/i.test(n) ? 1 : 0); }
+function pickVoice() { const vs = heVoices(); return vs.find((v) => v.name === TTS.voice) || vs.sort((a, b) => voiceScore(b) - voiceScore(a))[0] || null; }
+function speakable(t) {
+  return String(t)
+    .replace(/ס'\s?(\d+)/g, 'סעיף $1').replace(/ס"ק/g, 'סעיף קטן').replace(/עו"ד/g, 'עורך דין').replace(/יועמ"ש/g, 'יועץ המשפטי לממשלה')
+    .replace(/הוצל"פ/g, 'הוצאה לפועל').replace(/עמ'/g, 'עמוד').replace(/([\d,.]+)\s?₪/g, '$1 שקלים').replace(/₪/g, 'שקלים')
+    .replace(/\(([א-ת\d]{1,2})\)/g, ' $1 ').replace(/[→]/g, ', ולכן ').replace(/[–—]/g, ', ').replace(/\//g, ' או ').replace(/\s+/g, ' ').replace(/\s+([,.])/g, '$1').trim();
+}
+function secScript(num) {
+  const c = ALLC['law-' + num], ex = c.ex, parts = [`סעיף ${num}. ${c.note}.`, ex.sum];
+  ex.pts.forEach(([, t]) => parts.push(t));
+  if (ex.eg) parts.push('דוגמה. ' + ex.eg);
+  if (ex.tip) parts.push('ומה זה אומר לעורך הדין של החייב: ' + ex.tip);
+  /* split into short sentences – long utterances get cut off in some browsers */
+  return parts.map(speakable).flatMap((p) => p.split(/(?<=[.!?;:])\s+/)).flatMap((p) => p.length > 220 ? p.split(/,\s+/) : [p]).filter((x) => x.trim());
+}
+function ttsStop() { if (!hasTTS) return; TTS.on = false; TTS.q = []; speechSynthesis.cancel(); document.querySelectorAll('.r-sec.speaking').forEach((e) => e.classList.remove('speaking')); renderPlayer(); }
+function ttsPlay(num, cont = true) {
+  if (!hasTTS) return;
+  speechSynthesis.cancel(); TTS.on = true; TTS.cont = cont; TTS.cur = num; TTS.q = secScript(num);
+  document.querySelectorAll('.r-sec.speaking').forEach((e) => e.classList.remove('speaking'));
+  const el = document.getElementById('r-' + num); if (el) { el.classList.add('speaking'); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  setLast({ k: 'read', stage: TTS.stage, num }); renderPlayer(); ttsNext();
+}
+function ttsNext() {
+  if (!TTS.on) return;
+  if (!TTS.q.length) {
+    const i = TTS.list.indexOf(TTS.cur);
+    if (TTS.cont && i >= 0 && i < TTS.list.length - 1) { ttsPlay(TTS.list[i + 1], true); return; }
+    ttsStop(); return;
+  }
+  const u = new SpeechSynthesisUtterance(TTS.q.shift()), v = pickVoice();
+  u.lang = 'he-IL'; if (v) u.voice = v; u.rate = TTS.rate;
+  u.onend = () => setTimeout(ttsNext, 120); u.onerror = (e) => { if (e.error !== 'interrupted' && e.error !== 'canceled') setTimeout(ttsNext, 120); };
+  speechSynthesis.speak(u);
+}
+function renderPlayer() {
+  const el = $('#player'); if (!el) return;
+  if (!hasTTS) { el.innerHTML = `<p class="hint">הדפדפן הזה לא תומך בהקראה.<\/p>`; return; }
+  const vs = heVoices(), v = pickVoice();
+  const first = TTS.cur && TTS.list.includes(TTS.cur) ? TTS.cur : (P.last && P.last.k === 'read' && TTS.list.includes(P.last.num) ? P.last.num : TTS.list[0]);
+  el.innerHTML = `<div class="pl-row">
+      ${TTS.on ? `<button class="btn solid" type="button" id="plStop">עצירה<\/button><button class="btn" type="button" id="plSkip">לסעיף הבא<\/button><span class="pl-now">מקריא: ס' ${esc(TTS.cur)}<\/span>`
+        : `<button class="btn solid" type="button" id="plPlay">הקראה רציפה מס' ${esc(first)}<\/button>`}
+      <label class="pl-l">מהירות<select id="plRate">${[0.85, 1, 1.15, 1.3, 1.5].map((r) => `<option value="${r}" ${r === TTS.rate ? 'selected' : ''}>${r}×<\/option>`).join('')}<\/select><\/label>
+      ${vs.length > 1 ? `<label class="pl-l">קול<select id="plVoice">${vs.map((x) => `<option ${v && x.name === v.name ? 'selected' : ''}>${esc(x.name)}<\/option>`).join('')}<\/select><\/label>` : ''}
+    <\/div>
+    ${!vs.length ? `<p class="hint">לא נמצא במכשיר קול בעברית. לקול הכי טבעי: לפתוח את האתר בדפדפן Microsoft Edge (קול "Hila" או "Avri" – Natural), או להוריד קול עברי משופר בהגדרות הנגישות של האייפון או המק.<\/p>`
+      : voiceScore(v) < 3 ? `<p class="hint">לקול אנושי יותר: בדפדפן Microsoft Edge יש קולות עבריים טבעיים ("Hila"/"Avri" – Natural). באייפון ובמק אפשר להוריד קול עברי משופר (Enhanced) בהגדרות > נגישות > תוכן מוקרא.<\/p>` : ''}`;
+  const pp = $('#plPlay'); if (pp) pp.onclick = () => ttsPlay(first, true);
+  const st = $('#plStop'); if (st) st.onclick = ttsStop;
+  const sk = $('#plSkip'); if (sk) sk.onclick = () => { const i = TTS.list.indexOf(TTS.cur); if (i < TTS.list.length - 1) ttsPlay(TTS.list[i + 1], true); else ttsStop(); };
+  $('#plRate').onchange = (e) => { TTS.rate = +e.target.value; ls.set('tts-rate', String(TTS.rate)); };
+  const vo = $('#plVoice'); if (vo) vo.onchange = (e) => { TTS.voice = e.target.value; ls.set('tts-voice', TTS.voice); };
+}
+if (hasTTS) speechSynthesis.onvoiceschanged = () => { if (state.view === 'read') renderPlayer(); };
 
 /* ---------- tools: deadlines + where to file */
 const UNIT = { d: ['יום', 'ימים'], m: ['חודש', 'חודשים'], y: ['שנה', 'שנים'] };
