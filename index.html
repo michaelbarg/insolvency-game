@@ -131,6 +131,16 @@ button { font: inherit; color: inherit; }
 .answer { margin: 0; font-size: 1.02rem; line-height: 1.7; }
 .tip { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: .9rem; }
 .tip b { color: var(--c); }
+.vids { display: grid; gap: 8px; margin: 8px 0; }
+.vid { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 8px 10px; }
+.vid.seen { opacity: .7; }
+.vid-a { flex: 1; display: flex; gap: 10px; align-items: center; text-decoration: none; color: var(--ink); min-width: 0; }
+.vid-play { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #d22; color: #fff; font-size: .8rem; }
+.vid-t { display: grid; gap: 2px; min-width: 0; }
+.vid-t small { color: var(--muted); }
+.vid-t .off { color: var(--ok); font-weight: 700; }
+.r-vids { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); }
+.r-vids summary { cursor: pointer; font-weight: 700; color: var(--c); }
 .player { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0; border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
 .pl-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .pl-l { display: flex; gap: 6px; align-items: center; font-size: .82rem; color: var(--muted); }
@@ -679,6 +689,32 @@ const VENUE = {
   yosh: 'מעלה אדומים,ביתר עילית,מודיעין עילית,אריאל,אפרת,קריית ארבע,גבעת זאב,עמנואל,קרני שומרון,אלפי מנשה,אורנית'
 };
 
+/* YouTube lessons – checked to exist (Oct 2026); content not reviewed, chosen by title */
+const VIDEOS = [
+  { st: 'all', id: 'PLGSignVgHrxrQWFuBxyaHnF58EKRg8dtx', pl: 1, t: 'פלייליסט: האפוטרופוס הכללי, הממונה על הליכי חדלות פירעון והרשם לענייני ירושה', ch: 'אוסף סרטונים בנושא היחידות של משרד המשפטים' },
+  { st: 'all', id: 'EZaO0qYlxCI', t: 'מהו חוק חדלות פירעון ושיקום כלכלי', ch: 'עו"ד שלומי ברדוגו' },
+  { st: 'all', id: 'QVReJDevdu0', t: 'מהם השלבים בהליך חדלות פירעון ושיקום כלכלי', ch: 'עו"ד שלומי ברדוגו' },
+  { st: 'all', id: 'mQJgPeaMQtA', t: 'שינוי התפיסה בחוק חדלות פירעון ושיקום כלכלי – עו"ד שירה בן דב לוי', ch: 'דורון, טיקוצקי ושות\'' },
+  { st: 'all', id: 'I3OXMQmBmaM', t: 'חדלות פירעון: הלכה למעשה', ch: 'לשכת עורכי הדין – מחוז דרום' },
+  { st: 'all', id: 'qin3xOq616k', t: 'חדלות פירעון ושיקום כלכלי של יחידים ותאגידים (כנס אילת 2023)', ch: 'לשכת רואי החשבון' },
+  { st: 'all', id: 'B02fCDDChAU', t: 'פשיטת רגל / חדלות פירעון – המדריך המלא, עם עו"ד אוריאל זעירא', ch: 'הבולדוג' },
+  { st: 'all', id: 'x51UMIpiOdA', t: 'האם הליך חדלות פירעון הוא הליך גרוע לחייבים?', ch: 'עו"ד שלומי ברדוגו' },
+  { st: 's1', id: 'ijeE36je9e8', t: 'מהי הבקשה למתן צו לפתיחת הליכים', ch: 'עו"ד שלומי ברדוגו' },
+  { st: 's1', id: 'qbJO8_6ByJQ', t: 'על חשיבות סיפור החייב בהליך חדלות פירעון', ch: 'לשכת עורכי הדין – מחוז דרום' },
+  { st: 's2', id: 'KqF4gy3HHgg', t: 'מה קורה אם הנאמן לא "נאמן" לחייב?', ch: 'עו"ד שלומי ברדוגו' },
+  { st: 's3', id: 'iJnlCsJWaWo', t: 'מהו צו שיקום כלכלי', ch: 'עו"ד אבישג הורוויץ' },
+  { st: 's3', id: 'FYYtfnzV9Po', t: 'איך מתנהל הדיון בצו לשיקום כלכלי', ch: 'עו"ד שלומי ברדוגו' },
+  { st: 's3', id: 'P11BJQ0Zy_o', t: 'איך מחשבים תשלום חודשי', ch: 'עו"ד אבישג הורוויץ' },
+  { st: 's3', id: 'ChPCVXDoD0w', t: 'איך יודעים כמה ייקבע לשלם כל חודש', ch: 'עו"ד שלומי ברדוגו' },
+  { st: 's3', id: 'yJ8fHy8JNEo', t: 'איך מבצעים תשלומים בהליך', ch: 'עו"ד אבישג הורוויץ' },
+  { st: 's3', id: 'RySCbOPtZDo', t: 'הדיווחים לאחר הצו לשיקום כלכלי', ch: 'עו"ד שלומי ברדוגו' },
+  { st: 's3', id: 'AtVp4JmB9m0', t: 'חייב שמוגדר נכה ומקבל קצבאות מביטוח לאומי', ch: 'עו"ד שלומי ברדוגו' },
+  { st: 's3', id: 'cmOdVDyWSdo', t: 'מהו צו הפטר', ch: 'עו"ד אבישג הורוויץ' },
+  { st: 's3', id: 'hi6i8P7FE90', t: 'הדרך הנכונה לצאת מחדלות פירעון לשיקום כלכלי – עו"ד קארן גולדברג', ch: 'אימפקט' },
+  { st: 's4', id: 'm8wcThwcj6o', t: 'חדלות פירעון בהוצאה לפועל', ch: 'רשות האכיפה והגבייה', off: 1 },
+  { st: 's4', id: 'HDDyNKnskeQ', t: 'האם כדאי להגיע להסדר נושים במקום הליך חדלות פירעון?', ch: 'עו"ד שלומי ברדוגו' }
+];
+
 /* ================= מסלול חדלות פירעון ליחיד · v3 ================= */
 const MAIN = ['s1', 's2', 's3', 's4'];
 const MODES = ['s1', 's2', 's3', 's4', 'bonus', 'final'];
@@ -1069,6 +1105,7 @@ function renderHome() {
   $('#side').innerHTML = `
     <div class="tools-row">
       <button class="tool-card" type="button" data-tool="dl" style="--c:var(--s3)"><span class="tc-title">מועדים<\/span><span class="tc-blurb">כל המועדים של חלק ג' במקום אחד, ומחשבון שמחשב את התאריך מיום האירוע.<\/span><\/button>
+      <button class="tool-card" type="button" data-tool="vid" style="--c:var(--s4)"><span class="tc-title">שיעורים ב-YouTube<\/span><span class="tc-blurb">${VIDEOS.length} סרטונים על חדלות פירעון של יחידים, מסודרים לפי התחנות.<\/span><\/button>
       <button class="tool-card" type="button" data-tool="venue" style="--c:var(--s1)"><span class="tc-title">לאן מגישים?<\/span><span class="tc-blurb">מקום המגורים של החייב → הממונה, בית המשפט או לשכת ההוצאה לפועל.<\/span><\/button>
     <\/div>`;
   $('#side').innerHTML += `
@@ -1453,6 +1490,7 @@ function openRead(stage, at) {
   $('#read-body').innerHTML = `<div class="player" id="player"><\/div><div class="r-top"><div class="meter"><span id="readMeter" style="width:${Math.round(100 * done() / secsIn.length)}%"><\/span><\/div>
       <p class="block-sub" id="readCount">קראת ${done()} מתוך ${secsIn.length} סעיפים בתחנה. כל סעיף: בקצרה, הנקודות החשובות, דוגמה ומה זה אומר לעו"ד החייב.<\/p>
       <nav class="toc">${toc}<\/nav><\/div>
+    ${VIDEOS.some((v) => v.st === stage) ? `<details class="r-vids"><summary>שיעורים ב-YouTube לתחנה הזו (${VIDEOS.filter((v) => v.st === stage).length})<\/summary>${videoHTML(VIDEOS.filter((v) => v.st === stage))}<p class="hint">${VID_NOTE}<\/p><\/details>` : ''}
     <div class="r-body">${body}<\/div>
     <div class="actions r-end"><button class="btn solid" type="button" data-quiz="${stage}">לבדיקה של התחנה<\/button>
       ${nx ? `<button class="btn" type="button" data-read="${nx}">למחברת של תחנה ${META[nx].n}<\/button>` : ''}<button class="btn plain" type="button" data-home>חזרה למסלול<\/button><\/div>`;
@@ -1464,7 +1502,7 @@ function openRead(stage, at) {
     $('#readCount').firstChild.textContent = `קראת ${done()} מתוך ${secsIn.length} סעיפים בתחנה. כל סעיף: בקצרה, הנקודות החשובות, דוגמה ומה זה אומר לעו"ד החייב.`;
   }; });
   document.querySelectorAll('.toc-l').forEach((a) => { a.onclick = (e) => { e.preventDefault(); const el = document.getElementById(a.getAttribute('href').slice(1)); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
-  TTS.stage = stage; TTS.list = secsIn; renderPlayer();
+  TTS.stage = stage; TTS.list = secsIn; renderPlayer(); bindVideos($('#read-body'));
   document.querySelectorAll('[data-say]').forEach((b) => { b.onclick = () => ttsPlay(b.dataset.say, false); });
   show('read', colorOf(stage));
   setLast({ k: 'read', stage, num: at && DATA.notes[at] ? at : secsIn[0] });
@@ -1479,6 +1517,18 @@ function openRead(stage, at) {
     document.querySelectorAll('.r-sec').forEach((el) => readObs.observe(el));
   }
 }
+
+/* ---------- YouTube lessons */
+const vUrl = (v) => v.pl ? `https://www.youtube.com/playlist?list=${v.id}` : `https://www.youtube.com/watch?v=${v.id}`;
+function videoHTML(list) {
+  return `<div class="vids">${list.map((v) => { const seen = P.read['v:' + v.id]; return `<div class="vid ${seen ? 'seen' : ''}">
+    <a class="vid-a" href="${vUrl(v)}" target="_blank" rel="noopener"><span class="vid-play" aria-hidden="true">▶<\/span><span class="vid-t"><b>${esc(v.t)}<\/b><small>${esc(v.ch)}${v.off ? ' · <span class="off">רשמי<\/span>' : ''}${v.pl ? ' · פלייליסט' : ''}<\/small><\/span><\/a>
+    <button class="linkish" type="button" data-vseen="${v.id}">${seen ? 'צפיתי ✓' : 'סימון: צפיתי'}<\/button><\/div>`; }).join('')}<\/div>`;
+}
+function bindVideos(root) {
+  root.querySelectorAll('[data-vseen]').forEach((b) => { b.onclick = () => { const k = 'v:' + b.dataset.vseen; if (P.read[k]) delete P.read[k]; else P.read[k] = 1; save(); b.textContent = P.read[k] ? 'צפיתי ✓' : 'סימון: צפיתי'; b.closest('.vid').classList.toggle('seen', !!P.read[k]); }; });
+}
+const VID_NOTE = 'סרטונים פומביים מ-YouTube שנבחרו לפי הכותרת והערוץ; התוכן שלהם לא נבדק כאן. חלקם של משרדים שמציעים שירותים, וחלקם משתמשים במונח הישן "פשיטת רגל". המקור המחייב הוא החוק.';
 
 /* ---------- read aloud (speech synthesis of the device / browser) */
 const TTS = { on: false, stage: null, list: [], cur: null, cont: true, q: [], rate: +(ls.get('tts-rate') || 1), voice: ls.get('tts-voice') || '' };
@@ -1554,9 +1604,14 @@ function addPeriod(date, n, u, dir) {
 const fmtDate = (d) => d.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const THRESH = '176,923.12';
 function openTool(which) {
-  $('#tool-where').textContent = which === 'dl' ? 'מועדים · חלק ג\'' : 'לאן מגישים?';
-  if (which === 'dl') renderDeadlines(); else renderVenue();
-  show('tool', which === 'dl' ? 'var(--s3)' : 'var(--s1)');
+  $('#tool-where').textContent = which === 'dl' ? 'מועדים · חלק ג\'' : which === 'vid' ? 'שיעורים ב-YouTube' : 'לאן מגישים?';
+  if (which === 'dl') renderDeadlines(); else if (which === 'vid') renderVideos(); else renderVenue();
+  show('tool', which === 'dl' ? 'var(--s3)' : which === 'vid' ? 'var(--s4)' : 'var(--s1)');
+}
+function renderVideos() {
+  const groups = [['all', 'סקירה כללית'], ...MAIN.map((m) => [m, `תחנה ${META[m].n} · ${META[m].title}`])];
+  $('#tool-body').innerHTML = `<p class="block-sub">${VID_NOTE}<\/p>` + groups.filter(([k]) => VIDEOS.some((v) => v.st === k)).map(([k, t]) => `<h3 class="r-sg"${k !== 'all' ? ` style="color:${colorOf(k)}"` : ''}>${esc(t)}<\/h3>${videoHTML(VIDEOS.filter((v) => v.st === k))}`).join('');
+  bindVideos($('#tool-body'));
 }
 function renderDeadlines() {
   const opts = DEADLINES.map((d, i) => `<option value="${i}">ס' ${d.sec} · ${esc(unitTxt(d.n, d.u))} ${d.dir < 0 ? 'לפני ' : 'מ'}${esc(d.from)}<\/option>`).join('');
